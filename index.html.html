@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Träningspass-app</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            /* Låter innehåll scrolla om det är högre än skärmen (bra för liggande läge) */
+            overflow-y: auto; 
+            padding: 1rem; /* Ger lite extra utrymme */
+        }
+        .activity-row.dragging {
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+
+    <div id="startScreen" class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-2xl transition-opacity duration-500 ease-in-out">
+        <h1 class="text-3xl font-extrabold text-center text-gray-800 mb-6">Skapa ditt träningspass</h1>
+        <div class="space-y-4">
+            <!-- Nytt fält för att visa felmeddelanden -->
+            <div id="validationMessage" class="text-center text-red-500 font-semibold h-6 mb-2"></div>
+            
+            <div class="grid grid-cols-2 gap-4">
+                <div class="flex flex-col">
+                    <label for="antalSet" class="text-gray-700 font-semibold mb-1">Antal set:</label>
+                    <input type="number" id="antalSet" value="3" min="1" class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-blue-500 focus:border-blue-500 transition-colors">
+                </div>
+                <div class="flex flex-col">
+                    <label for="setVila" class="text-gray-700 font-semibold mb-1">Set-vila (sekunder):</label>
+                    <input type="number" id="setVila" value="60" min="5" class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-blue-500 focus:border-blue-500 transition-colors">
+                </div>
+            </div>
+            
+            <!-- Flyttad sektion för totaltid och startknapp -->
+            <div class="flex justify-between items-center mt-6 p-4 bg-gray-100 rounded-xl">
+                <span class="text-gray-700 font-bold">Total tid för passet:</span>
+                <span id="totalTidDisplay" class="text-xl font-extrabold text-gray-800">00:00</span>
+            </div>
+
+            <button id="startaPass" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-xl hover:bg-blue-700 transition-colors duration-200 shadow-md">
+                Starta pass
+            </button>
+
+            <hr class="my-4 border-gray-200">
+            <!-- Ny sektion för att kontrollera antalet aktivitetsrader -->
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-xl font-bold text-gray-700">Aktiviteter</h3>
+                <div class="flex items-center space-x-2">
+                    <label for="numActivitiesInput" class="text-gray-700 font-semibold">Antal rader:</label>
+                    <input type="number" id="numActivitiesInput" value="1" min="1" class="w-20 px-3 py-1 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                </div>
+            </div>
+            
+            <!-- Dynamiskt innehåll för aktiviteter -->
+            <div id="activitiesContainer" class="space-y-2">
+                <!-- Header för aktiviteterna, uppdaterad för att ge mer utrymme till aktivitetsnamnet -->
+                <div class="grid grid-cols-[2fr_1fr_1fr_min-content_min-content] gap-2 font-bold text-gray-700 p-2 border-b-2 border-gray-300">
+                    <div>Namn på aktivitet</div>
+                    <div class="text-center">Träningstid (s)</div>
+                    <div class="text-center">Vilotid (s)</div>
+                    <div></div> <!-- Tom kolumn för pilar -->
+                    <div></div> <!-- Tom kolumn för Ta bort-knappen -->
+                </div>
+            </div>
+            
+            <div class="flex justify-center mt-4">
+                <button id="addActivityBtn" class="text-blue-600 hover:text-blue-800 transition-colors duration-200">
+                    <i class="fas fa-plus-circle text-3xl"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="workoutScreen" class="hidden text-center bg-white p-8 rounded-2xl shadow-xl w-full max-w-md transition-opacity duration-500 ease-in-out relative">
+        <!-- Total tid för passet och avklarad procent, uppdateras dynamiskt -->
+        <div class="absolute top-4 left-4 text-sm text-gray-500 font-semibold">
+            Avklarat: <span id="procentAvklaratDisplay">0%</span>
+        </div>
+        <div class="absolute top-4 right-4 text-sm text-gray-500 font-semibold">
+            Tid kvar: <span id="totalTidKvarDisplay">00:00</span>
+        </div>
+
+        <h2 id="aktuellAktivitetNamn" class="text-3xl font-extrabold text-gray-800 mb-2 mt-8"></h2>
+        <p id="aktuellFas" class="text-2xl font-bold text-blue-600 mb-4">Träning</p>
+        
+        <!-- Timer-cirkel som anpassar sig efter skärmen -->
+        <div class="relative w-full max-w-[200px] aspect-square mx-auto mb-8 flex items-center justify-center">
+            <svg class="absolute inset-0 transform -rotate-90 w-full h-full">
+                <circle id="countdownCircle" class="text-gray-200" stroke-width="12" stroke="currentColor" fill="transparent" r="80" cx="96" cy="96"/>
+                <circle id="countdownProgress" class="text-blue-500" stroke-width="12" stroke="currentColor" fill="transparent" r="80" cx="96" cy="96" stroke-linecap="round"/>
+            </svg>
+            <span id="timerDisplay" class="text-5xl md:text-6xl font-black text-gray-800"></span>
+        </div>
+        
+        <p class="text-2xl font-bold text-gray-700 mb-2">Set <span id="setNum">1</span> av <span id="totaltAntalSet"></span></p>
+        <p class="text-xl text-gray-500">Nästa: <span id="nästaFas"></span></p>
+
+        <div class="flex justify-center mt-8 space-x-4">
+            <button id="pausKnapp" class="bg-yellow-500 text-white font-bold py-3 px-6 rounded-xl hover:bg-yellow-600 transition-colors duration-200 shadow-md">
+                <i class="fas fa-pause"></i> Pausa
+            </button>
+            <button id="skipKnapp" class="bg-green-500 text-white font-bold py-3 px-6 rounded-xl hover:bg-green-600 transition-colors duration-200 shadow-md">
+                <i class="fas fa-forward"></i> Hoppa över
+            </button>
+            <button id="omstartKnapp" class="bg-red-500 text-white font-bold py-3 px-6 rounded-xl hover:bg-red-600 transition-colors duration-200 shadow-md">
+                <i class="fas fa-undo"></i> Starta om
+            </button>
+        </div>
+    </div>
+
+    <div id="endScreen" class="hidden text-center bg-white p-8 rounded-2xl shadow-xl w-full max-w-md transition-opacity duration-500 ease-in-out">
+        <i class="fas fa-trophy text-yellow-500 text-6xl mb-4 animate-bounce"></i>
+        <h2 class="text-4xl font-extrabold text-gray-800 mb-4">Bra jobbat!</h2>
+        <p class="text-xl text-gray-600 mb-8">Passet är klart. Dags för lite välförtjänt vila.</p>
+        <button id="nyttPassKnapp" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-xl hover:bg-blue-700 transition-colors duration-200 shadow-md">
+            Starta nytt pass
+        </button>
+    </div>
+
+    <script>
+        // Hämta DOM-element
+        const startScreen = document.getElementById('startScreen');
+        const workoutScreen = document.getElementById('workoutScreen');
+        const endScreen = document.getElementById('endScreen');
+
+        const antalSetInput = document.getElementById('antalSet');
+        const setVilaInput = document.getElementById('setVila');
+        const numActivitiesInput = document.getElementById('numActivitiesInput');
+        const startaPassKnapp = document.getElementById('startaPass');
+        const nyttPassKnapp = document.getElementById('nyttPassKnapp');
+        const addActivityBtn = document.getElementById('addActivityBtn');
+
+        const validationMessage = document.getElementById('validationMessage');
+        const activitiesContainer = document.getElementById('activitiesContainer');
+
+        const aktuellAktivitetNamn = document.getElementById('aktuellAktivitetNamn');
+        const aktuellFasText = document.getElementById('aktuellFas');
+        const timerDisplay = document.getElementById('timerDisplay');
+        const setNumSpan = document.getElementById('setNum');
+        const totaltAntalSetSpan = document.getElementById('totaltAntalSet');
+        const nästaFasSpan = document.getElementById('nästaFas');
+        const countdownProgress = document.getElementById('countdownProgress');
+
+        const pausKnapp = document.getElementById('pausKnapp');
+        const skipKnapp = document.getElementById('skipKnapp');
+        const omstartKnapp = document.getElementById('omstartKnapp');
+
+        const totalTidDisplay = document.getElementById('totalTidDisplay');
+        const totalTidKvarDisplay = document.getElementById('totalTidKvarDisplay');
+        const procentAvklaratDisplay = document.getElementById('procentAvklaratDisplay');
+
+        // Färgkonstanter för faserna
+        const FARG_TRANING = '#3b82f6';   // Blå
+        const FARG_VILA = '#f59e0b';       // Gul
+        const FARG_SET_VILA = '#9ca3af';   // Grå
+
+        // Globals för träningspasset
+        let antalSet;
+        let setVila;
+        let setNum = 1;
+        let tidKvar;
+        let aktivFas; // "träning", "vila" eller "set-vila"
+        let timerId;
+        let isPaused = false;
+        let activities = [];
+        let currentActivityIndex = 0;
+        let dragSrcEl = null;
+        
+        // Globals för totaltid och avklarad tid
+        let totalOriginalTime = 0;
+        let totalTimeElapsed = 0;
+        
+        // Ljudfrekvenser enligt önskemål
+        const FREQUENCY_DAMPENED = 220; // Dämpad beep
+        const FREQUENCY_HIGH_PITCH = 660; // Högfrekvent beep
+        let audioContext = null; // Denna skapas bara en gång vid första användarinteraktionen
+
+        // Funktion för att spela ett ljud
+        function playBeepSound(frequency, duration = 0.3) {
+            try {
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+                gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
+
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+
+                oscillator.start();
+                gainNode.gain.exponentialRampToValueAtTime(0.00001, audioContext.currentTime + duration);
+                oscillator.stop(audioContext.currentTime + duration);
+            } catch (e) {
+                console.error("Kunde inte spela ljud:", e);
+            }
+        }
+        
+        // Cirkelns omkrets
+        const omkrets = countdownProgress.r.baseVal.value * 2 * Math.PI;
+        countdownProgress.style.strokeDasharray = omkrets;
+        
+        // Funktion för att skapa en ny rad för aktivitet
+        function createActivityRow(name = '', traning = '', vila = '') {
+            const newRow = document.createElement('div');
+            // Uppdaterad grid-klass för att ge mer utrymme till aktivitetsnamnet
+            newRow.classList.add('activity-row', 'grid', 'grid-cols-[2fr_1fr_1fr_min-content_min-content_min-content]', 'gap-2', 'p-2', 'rounded-lg', 'bg-gray-50', 'cursor-grab', 'items-center');
+            newRow.setAttribute('draggable', 'true');
+            newRow.innerHTML = `
+                <input type="text" class="activity-name w-full px-3 py-1 border border-gray-300 rounded-lg" value="${name}" placeholder="T.ex. Knäböj">
+                <input type="number" class="traningstid w-full px-3 py-1 border border-gray-300 rounded-lg text-center" value="${traning}" min="5" placeholder="30">
+                <input type="number" class="vilotid w-full px-3 py-1 border border-gray-300 rounded-lg text-center" value="${vila}" min="5" placeholder="15">
+                <div class="flex flex-col space-y-1 justify-center items-center">
+                    <button class="move-up-btn text-gray-500 hover:text-gray-700 transition-colors duration-200">
+                        <i class="fas fa-caret-up"></i>
+                    </button>
+                    <button class="move-down-btn text-gray-500 hover:text-gray-700 transition-colors duration-200">
+                        <i class="fas fa-caret-down"></i>
+                    </button>
+                </div>
+                <button class="copy-activity-btn text-gray-500 hover:text-gray-700 transition-colors duration-200 text-xl">
+                    <i class="fas fa-copy"></i>
+                </button>
+                <button class="remove-activity-btn text-red-500 hover:text-red-700 transition-colors duration-200 text-xl">
+                    <i class="fas fa-trash-alt"></i>
+                </button>
+            `;
+            activitiesContainer.appendChild(newRow);
+        }
+        
+        // Funktion för att skapa det initiala antalet rader
+        function createInitialActivities() {
+            // Rensa befintliga aktiviteter först
+            activitiesContainer.innerHTML = `
+                <!-- Header för aktiviteterna, uppdaterad för att ge mer utrymme till aktivitetsnamnet -->
+                <div class="grid grid-cols-[2fr_1fr_1fr_min-content_min-content_min-content] gap-2 font-bold text-gray-700 p-2 border-b-2 border-gray-300">
+                    <div>Namn på aktivitet</div>
+                    <div class="text-center">Träningstid (s)</div>
+                    <div class="text-center">Vilotid (s)</div>
+                    <div></div> <!-- Tom kolumn för pilar -->
+                    <div></div> <!-- Tom kolumn för kopieringsknapp -->
+                    <div></div> <!-- Tom kolumn för Ta bort-knappen -->
+                </div>
+            `;
+            const numRows = parseInt(numActivitiesInput.value) || 1;
+            for (let i = 0; i < numRows; i++) {
+                createActivityRow('Övning ' + (i + 1), 30, 30);
+            }
+            updateTotalTimeDisplayOnStartScreen();
+        }
+        
+        // Uppdaterar antalet rader baserat på inputfältet
+        function updateActivitiesDisplay() {
+            const currentRows = activitiesContainer.querySelectorAll('.activity-row');
+            const targetRows = parseInt(numActivitiesInput.value) || 1;
+            const currentCount = currentRows.length;
+
+            // Om det finns befintliga rader, hämta värden från den första raden
+            let firstRowName = '';
+            let firstRowTraning = '';
+            let firstRowVila = '';
+            if (currentRows.length > 0) {
+                firstRowName = currentRows[0].querySelector('.activity-name').value;
+                firstRowTraning = currentRows[0].querySelector('.traningstid').value;
+                firstRowVila = currentRows[0].querySelector('.vilotid').value;
+            }
+
+            if (targetRows > currentCount) {
+                // Lägg till nya rader med samma värden som den första raden
+                for (let i = currentCount; i < targetRows; i++) {
+                    const newName = `Övning ${i + 1}`;
+                    createActivityRow(newName, firstRowTraning, firstRowVila);
+                }
+            } else if (targetRows < currentCount) {
+                // Ta bort rader från slutet
+                for (let i = currentCount; i > targetRows; i--) {
+                    const lastRow = activitiesContainer.querySelector('.activity-row:last-of-type');
+                    if (lastRow) {
+                        lastRow.remove();
+                    }
+                }
+            }
+            updateTotalTimeDisplayOnStartScreen();
+        }
+        
+        // Kör funktionen för att skapa de initiala aktiviteterna
+        createInitialActivities();
+
+        // Funktion för att beräkna totaltiden för passet
+        function calculateTotalWorkoutTime() {
+            let totalSeconds = 0;
+            const antalSet = parseInt(antalSetInput.value) || 0;
+            const setVila = parseInt(setVilaInput.value) || 0;
+            
+            if (antalSet === 0) return 0;
+
+            let totalTimePerSet = 0;
+            const activityRows = activitiesContainer.querySelectorAll('.activity-row');
+            activityRows.forEach(row => {
+                const traningstid = parseInt(row.querySelector('.traningstid').value) || 0;
+                const vilotid = parseInt(row.querySelector('.vilotid').value) || 0;
+                totalTimePerSet += traningstid + vilotid;
+            });
+
+            totalSeconds = totalTimePerSet * antalSet;
+            if (antalSet > 1) {
+                totalSeconds += (antalSet - 1) * setVila;
+            }
+            
+            // Dra av den sista vilan
+            if (activitiesContainer.querySelectorAll('.activity-row').length > 0) {
+                const lastActivityVila = parseInt(activitiesContainer.querySelector('.activity-row:last-of-type .vilotid').value) || 0;
+                totalSeconds -= lastActivityVila;
+            }
+
+            return totalSeconds;
+        }
+
+        // Funktion för att formatera sekunder till MM:SS
+        function formatTime(totalSeconds) {
+            const minutes = Math.floor(totalSeconds / 60);
+            const seconds = totalSeconds % 60;
+            const paddedMinutes = String(minutes).padStart(2, '0');
+            const paddedSeconds = String(seconds).padStart(2, '0');
+            return `${paddedMinutes}:${paddedSeconds}`;
+        }
+        
+        // Funktion för att uppdatera totaltid-displayen på startskärmen
+        function updateTotalTimeDisplayOnStartScreen() {
+            const totalSeconds = calculateTotalWorkoutTime();
+            totalTidDisplay.textContent = formatTime(totalSeconds);
+        }
+
+        // Initial uppdatering av totaltiden
+        updateTotalTimeDisplayOnStartScreen();
+
+        // Lyssnare för att uppdatera totaltid dynamiskt när inputs ändras
+        antalSetInput.addEventListener('input', updateTotalTimeDisplayOnStartScreen);
+        setVilaInput.addEventListener('input', updateTotalTimeDisplayOnStartScreen);
+        numActivitiesInput.addEventListener('input', updateActivitiesDisplay);
+
+        activitiesContainer.addEventListener('input', (e) => {
+            const target = e.target;
+            if (target.classList.contains('traningstid') || target.classList.contains('vilotid')) {
+                updateTotalTimeDisplayOnStartScreen();
+            }
+        });
+
+        // Event listener för plus-knappen
+        addActivityBtn.addEventListener('click', () => {
+            const currentCount = activitiesContainer.querySelectorAll('.activity-row').length;
+            const firstRow = activitiesContainer.querySelector('.activity-row');
+            if (firstRow) {
+                const traningstid = firstRow.querySelector('.traningstid').value;
+                const vilotid = firstRow.querySelector('.vilotid').value;
+                createActivityRow('Övning ' + (currentCount + 1), traningstid, vilotid);
+            } else {
+                createActivityRow('Övning ' + (currentCount + 1), 30, 30);
+            }
+            numActivitiesInput.value = currentCount + 1; // Uppdatera antal rader-input
+            updateTotalTimeDisplayOnStartScreen();
+        });
+        
+        // Event delegation för att ta bort, flytta och kopiera rader
+        activitiesContainer.addEventListener('click', (e) => {
+            const removeBtn = e.target.closest('.remove-activity-btn');
+            if (removeBtn) {
+                const rows = activitiesContainer.querySelectorAll('.activity-row');
+                if (rows.length > 1) { // Låt inte den sista raden tas bort
+                    removeBtn.closest('.activity-row').remove();
+                    numActivitiesInput.value = rows.length - 1; // Uppdatera antal rader-input
+                    updateTotalTimeDisplayOnStartScreen(); // Uppdatera totaltiden efter borttagning
+                } else {
+                    validationMessage.textContent = 'Du måste ha minst en aktivitet i passet.';
+                }
+            }
+
+            const moveUpBtn = e.target.closest('.move-up-btn');
+            if (moveUpBtn) {
+                const row = moveUpBtn.closest('.activity-row');
+                const prevRow = row.previousElementSibling;
+                // Säkerställ att det inte är rubrikraden
+                if (prevRow && prevRow.classList.contains('activity-row')) {
+                    row.parentNode.insertBefore(row, prevRow);
+                    updateTotalTimeDisplayOnStartScreen(); // Uppdatera totaltiden
+                }
+            }
+
+            const moveDownBtn = e.target.closest('.move-down-btn');
+            if (moveDownBtn) {
+                const row = moveDownBtn.closest('.activity-row');
+                const nextRow = row.nextElementSibling;
+                if (nextRow) {
+                    row.parentNode.insertBefore(nextRow, row);
+                    updateTotalTimeDisplayOnStartScreen(); // Uppdatera totaltiden
+                }
+            }
+
+            const copyBtn = e.target.closest('.copy-activity-btn');
+            if (copyBtn) {
+                const originalRow = copyBtn.closest('.activity-row');
+                const name = originalRow.querySelector('.activity-name').value;
+                const traning = originalRow.querySelector('.traningstid').value;
+                const vila = originalRow.querySelector('.vilotid').value;
+                
+                const newRow = document.createElement('div');
+                newRow.classList.add('activity-row', 'grid', 'grid-cols-[2fr_1fr_1fr_min-content_min-content_min-content]', 'gap-2', 'p-2', 'rounded-lg', 'bg-gray-50', 'cursor-grab', 'items-center');
+                newRow.setAttribute('draggable', 'true');
+                newRow.innerHTML = `
+                    <input type="text" class="activity-name w-full px-3 py-1 border border-gray-300 rounded-lg" value="${name}" placeholder="T.ex. Knäböj">
+                    <input type="number" class="traningstid w-full px-3 py-1 border border-gray-300 rounded-lg text-center" value="${traning}" min="5" placeholder="30">
+                    <input type="number" class="vilotid w-full px-3 py-1 border border-gray-300 rounded-lg text-center" value="${vila}" min="5" placeholder="15">
+                    <div class="flex flex-col space-y-1 justify-center items-center">
+                        <button class="move-up-btn text-gray-500 hover:text-gray-700 transition-colors duration-200">
+                            <i class="fas fa-caret-up"></i>
+                        </button>
+                        <button class="move-down-btn text-gray-500 hover:text-gray-700 transition-colors duration-200">
+                            <i class="fas fa-caret-down"></i>
+                        </button>
+                    </div>
+                    <button class="copy-activity-btn text-gray-500 hover:text-gray-700 transition-colors duration-200 text-xl">
+                        <i class="fas fa-copy"></i>
+                    </button>
+                    <button class="remove-activity-btn text-red-500 hover:text-red-700 transition-colors duration-200 text-xl">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
+                `;
+                activitiesContainer.appendChild(newRow);
+                numActivitiesInput.value = parseInt(numActivitiesInput.value) + 1;
+                updateTotalTimeDisplayOnStartScreen();
+            }
+        });
+        
+        // Drag and drop-funktioner för att flytta aktiviteter
+        function handleDragStart(e) {
+            this.style.opacity = '0.5';
+            dragSrcEl = this;
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/html', this.outerHTML);
+        }
+
+        function handleDragOver(e) {
+            if (e.preventDefault) {
+                e.preventDefault(); 
+            }
+            e.dataTransfer.dropEffect = 'move';
+            return false;
+        }
+
+        function handleDrop(e) {
+            if (e.stopPropagation) {
+                e.stopPropagation();
+            }
+
+            // Flytta elementet. Korrekt logik.
+            if (dragSrcEl !== this) {
+                const dropTarget = this;
+                const parent = activitiesContainer;
+                // Använd insertBefore för att flytta elementet till rätt plats
+                if (parent.children.length > 1) {
+                    const dropTargetIndex = Array.from(parent.children).indexOf(dropTarget);
+                    const draggedElementIndex = Array.from(parent.children).indexOf(dragSrcEl);
+                    const headerRow = activitiesContainer.children[0];
+
+                    if (dropTargetIndex > draggedElementIndex) {
+                        parent.insertBefore(dragSrcEl, dropTarget.nextSibling);
+                    } else {
+                        parent.insertBefore(dragSrcEl, dropTarget);
+                    }
+                }
+            }
+            updateTotalTimeDisplayOnStartScreen(); // Uppdatera totaltiden efter flytt
+            return false;
+        }
+
+        function handleDragEnd(e) {
+            this.style.opacity = '1';
+            const rows = activitiesContainer.querySelectorAll('.activity-row');
+            rows.forEach(row => {
+                row.classList.remove('dragging');
+            });
+            updateTotalTimeDisplayOnStartScreen(); // Uppdatera totaltiden efter drag and drop
+        }
+
+        // Lägg till event-lyssnare för drag and drop
+        activitiesContainer.addEventListener('dragstart', handleDragStart, true);
+        activitiesContainer.addEventListener('dragover', handleDragOver, false);
+        activitiesContainer.addEventListener('drop', handleDrop, false);
+        activitiesContainer.addEventListener('dragend', handleDragEnd, false);
+        
+        // Funktion för att uppdatera nedräkningen
+        function updateTimer() {
+            if (isPaused) {
+                return;
+            }
+
+            // Spela nedräkningsljud (dämpat) på 3, 2, 1
+            if (tidKvar > 0 && tidKvar <= 3) {
+                playBeepSound(FREQUENCY_DAMPENED);
+            }
+            
+            // Spela high-pitch ljud och byt fas när tiden är ute
+            if (tidKvar <= 0) {
+                handlePhaseChange();
+                return;
+            }
+
+            // Uppdatera displayen
+            timerDisplay.textContent = tidKvar;
+
+            // Uppdatera cirkeln och totaltid
+            let totalTidForPhase;
+            if (aktivFas === 'träning') {
+                totalTidForPhase = activities[currentActivityIndex].traning;
+            } else if (aktivFas === 'vila') {
+                totalTidForPhase = activities[currentActivityIndex].vila;
+            } else { // set-vila
+                totalTidForPhase = setVila;
+            }
+            
+            const elapsedInPhase = totalTidForPhase - tidKvar;
+            const progress = elapsedInPhase / totalTidForPhase;
+            const dashoffset = -omkrets * progress;
+            countdownProgress.style.strokeDashoffset = dashoffset;
+            
+            const totalTimeRemaining = totalOriginalTime - (totalTimeElapsed + elapsedInPhase);
+            totalTidKvarDisplay.textContent = formatTime(Math.max(0, totalTimeRemaining));
+            
+            let percentCompleted = 0;
+            if (totalOriginalTime > 0) {
+                percentCompleted = Math.round(((totalTimeElapsed + elapsedInPhase) / totalOriginalTime) * 100);
+            }
+            procentAvklaratDisplay.textContent = `${percentCompleted}%`;
+            
+            // Minska tiden och starta om timern
+            tidKvar--;
+            timerId = setTimeout(updateTimer, 1000);
+        }
+
+        // Funktion för att hantera fasbyte
+        function handlePhaseChange() {
+            // Uppdatera totalTimeElapsed exakt när en fas är avslutad
+            let totalTidForPhase;
+            if (aktivFas === 'träning') {
+                totalTidForPhase = activities[currentActivityIndex].traning;
+            } else if (aktivFas === 'vila') {
+                totalTidForPhase = activities[currentActivityIndex].vila;
+            } else { // set-vila
+                totalTidForPhase = setVila;
+            }
+            totalTimeElapsed += totalTidForPhase;
+            
+            // Spela high-pitch ljud vid varje fasbyte
+            playBeepSound(FREQUENCY_HIGH_PITCH);
+
+            if (aktivFas === 'träning') {
+                // Kolla om detta är sista träningsfasen av hela passet
+                const isLastActivity = currentActivityIndex === activities.length - 1;
+                const isLastSet = setNum === antalSet;
+
+                if (isLastActivity && isLastSet) {
+                    endWorkout();
+                    return;
+                }
+                
+                // Gå vidare till vila för denna aktivitet
+                aktivFas = 'vila';
+                tidKvar = activities[currentActivityIndex].vila;
+                aktuellFasText.textContent = 'Vila';
+                aktuellFasText.style.color = FARG_VILA;
+                countdownProgress.style.stroke = FARG_VILA;
+                
+                // Bestäm nästa fas efter denna vila
+                const nextPhaseIsSetVila = isLastActivity && !isLastSet;
+                if (nextPhaseIsSetVila) {
+                    nästaFasSpan.textContent = `Set-vila (${setVila}s)`;
+                } else {
+                    nästaFasSpan.textContent = `Träning (${activities[currentActivityIndex + 1].traning}s) - ${activities[currentActivityIndex + 1].name}`;
+                }
+
+            } else if (aktivFas === 'vila') {
+                currentActivityIndex++;
+                if (currentActivityIndex < activities.length) {
+                    // Fortsätt till nästa aktivitet i samma set
+                    aktivFas = 'träning';
+                    tidKvar = activities[currentActivityIndex].traning;
+                    aktuellAktivitetNamn.textContent = activities[currentActivityIndex].name;
+                    aktuellFasText.textContent = 'Träning';
+                    aktuellFasText.style.color = FARG_TRANING;
+                    countdownProgress.style.stroke = FARG_TRANING;
+                    
+                    // Bestäm nästa fas efter denna träning
+                    const isLastActivity = currentActivityIndex === activities.length - 1;
+                    const isLastSet = setNum === antalSet;
+                    if (isLastActivity && isLastSet) {
+                        nästaFasSpan.textContent = 'Slut på passet';
+                    } else if (isLastActivity) {
+                        nästaFasSpan.textContent = `Set-vila (${setVila}s)`;
+                    } else {
+                        nästaFasSpan.textContent = `Vila (${activities[currentActivityIndex].vila}s)`;
+                    }
+                } else {
+                    // Alla aktiviteter i setet är klara, gå till set-vila
+                    setNum++;
+                    if (setNum > antalSet) {
+                        endWorkout();
+                        return;
+                    }
+                    
+                    aktivFas = 'set-vila';
+                    tidKvar = setVila;
+                    aktuellAktivitetNamn.textContent = 'Set-vila';
+                    aktuellFasText.textContent = 'Vila';
+                    aktuellFasText.style.color = FARG_SET_VILA;
+                    countdownProgress.style.stroke = FARG_SET_VILA;
+                    
+                    nästaFasSpan.textContent = `Träning (${activities[0].traning}s) - ${activities[0].name}`;
+                    
+                    setNumSpan.textContent = setNum;
+                    currentActivityIndex = 0; // Återställ för nästa set
+                }
+            } else { // aktivFas === 'set-vila'
+                // Starta nästa set
+                aktivFas = 'träning';
+                tidKvar = activities[currentActivityIndex].traning;
+                aktuellAktivitetNamn.textContent = activities[currentActivityIndex].name;
+                aktuellFasText.textContent = 'Träning';
+                aktuellFasText.style.color = FARG_TRANING;
+                countdownProgress.style.stroke = FARG_TRANING;
+                
+                const isLastActivity = currentActivityIndex === activities.length - 1;
+                const isLastSet = setNum === antalSet;
+
+                if (isLastActivity && isLastSet) {
+                    nästaFasSpan.textContent = 'Slut på passet';
+                } else if (isLastActivity) {
+                     nästaFasSpan.textContent = `Set-vila (${setVila}s)`;
+                } else {
+                     nästaFasSpan.textContent = `Vila (${activities[currentActivityIndex].vila}s)`;
+                }
+            }
+            
+            // Starta den nya timern
+            updateTimer();
+        }
+
+        // Funktion för att starta träningspasset
+        function startWorkout() {
+            validationMessage.textContent = '';
+            activities = [];
+
+            // Hämta värden från input-fält och bygg "activities"-arrayen
+            const activityRows = activitiesContainer.querySelectorAll('.activity-row');
+            activityRows.forEach(row => {
+                const nameInput = row.querySelector('.activity-name');
+                const traningstidInput = row.querySelector('.traningstid');
+                const vilotidInput = row.querySelector('.vilotid');
+
+                const name = nameInput.value.trim();
+                const traning = parseInt(traningstidInput.value);
+                const vila = parseInt(vilotidInput.value);
+                
+                // Ignorera tomma rader i slutet
+                if (name !== '' && !isNaN(traning) && !isNaN(vila)) {
+                    activities.push({ name: name, traning: traning, vila: vila });
+                }
+            });
+            
+            // Validera inmatning
+            antalSet = parseInt(antalSetInput.value);
+            setVila = parseInt(setVilaInput.value);
+
+            if (isNaN(antalSet) || antalSet < 1) {
+                validationMessage.textContent = 'Vänligen ange ett giltigt antal set (minst 1).';
+                return;
+            }
+            if (isNaN(setVila) || setVila < 5) {
+                validationMessage.textContent = 'Vänligen ange en giltig set-vila (minst 5s).';
+                return;
+            }
+            if (activities.length === 0) {
+                validationMessage.textContent = 'Vänligen lägg till minst en aktivitet.';
+                return;
+            }
+
+            // Visa träningsskärmen
+            startScreen.classList.add('hidden');
+            workoutScreen.classList.remove('hidden');
+
+            // Initiera variabler för passet
+            setNum = 1;
+            currentActivityIndex = 0;
+            aktivFas = 'träning';
+            tidKvar = activities[currentActivityIndex].traning;
+
+            // Nollställ och sätt totaltid för passet
+            totalOriginalTime = calculateTotalWorkoutTime();
+            totalTimeElapsed = 0;
+
+            totalTidKvarDisplay.textContent = formatTime(totalOriginalTime);
+            procentAvklaratDisplay.textContent = '0%';
+            
+            // Uppdatera UI
+            setNumSpan.textContent = setNum;
+            totaltAntalSetSpan.textContent = antalSet;
+            aktuellAktivitetNamn.textContent = activities[currentActivityIndex].name;
+            aktuellFasText.textContent = 'Träning';
+            
+            const isLastActivityOfLastSet = (currentActivityIndex === activities.length - 1) && (setNum === antalSet);
+            if(isLastActivityOfLastSet) {
+                 nästaFasSpan.textContent = 'Slut på passet';
+            } else {
+                 nästaFasSpan.textContent = `Vila (${activities[currentActivityIndex].vila}s)`;
+            }
+
+            countdownProgress.style.stroke = FARG_TRANING;
+            
+            // Starta timern
+            updateTimer();
+        }
+
+        // Funktion för att pausa/återuppta
+        function togglePause() {
+            isPaused = !isPaused;
+            if (isPaused) {
+                clearTimeout(timerId);
+                pausKnapp.innerHTML = '<i class="fas fa-play"></i> Återuppta';
+            } else {
+                pausKnapp.innerHTML = '<i class="fas fa-pause"></i> Pausa';
+                updateTimer();
+            }
+        }
+        
+        // Funktion för att hoppa över till nästa fas
+        function skipPhase() {
+            clearTimeout(timerId);
+            
+            // Lägg till den avklarade tiden i den aktuella fasen till totalen
+            let totalTidForPhase;
+            if (aktivFas === 'träning') {
+                totalTidForPhase = activities[currentActivityIndex].traning;
+            } else if (aktivFas === 'vila') {
+                totalTidForPhase = activities[currentActivityIndex].vila;
+            } else { // set-vila
+                totalTidForPhase = setVila;
+            }
+            totalTimeElapsed += (totalTidForPhase - tidKvar);
+
+            handlePhaseChange();
+        }
+
+        // Funktion för att starta om passet
+        function resetWorkout() {
+            clearTimeout(timerId);
+            isPaused = false;
+            pausKnapp.innerHTML = '<i class="fas fa-pause"></i> Pausa';
+            
+            // Återgå till startskärmen
+            workoutScreen.classList.add('hidden');
+            startScreen.classList.remove('hidden');
+            updateTotalTimeDisplayOnStartScreen(); // Uppdatera totaltiden vid återställning
+        }
+
+        // Funktion för att avsluta passet
+        function endWorkout() {
+            clearTimeout(timerId);
+            workoutScreen.classList.add('hidden');
+            endScreen.classList.remove('hidden');
+
+            // Spela två extra high-pitch pip för att signalera att passet är slut
+            setTimeout(() => {
+                playBeepSound(FREQUENCY_HIGH_PITCH);
+            }, 500); 
+
+            setTimeout(() => {
+                playBeepSound(FREQUENCY_HIGH_PITCH);
+            }, 1000); 
+        }
+
+        // Funktion för att starta ett nytt pass
+        function startNewWorkout() {
+            endScreen.classList.add('hidden');
+            startScreen.classList.remove('hidden');
+            resetWorkout(); // Återställer variablerna
+            activities = []; // Rensa aktiviteter
+            activitiesContainer.querySelectorAll('.activity-row').forEach(row => row.remove()); // Ta bort rader
+            createInitialActivities(); // Lägg till de initiala aktiviteterna
+        }
+
+        // Lägg till händelselyssnare
+        startaPassKnapp.addEventListener('click', startWorkout);
+        pausKnapp.addEventListener('click', togglePause);
+        skipKnapp.addEventListener('click', skipPhase);
+        omstartKnapp.addEventListener('click', resetWorkout);
+        nyttPassKnapp.addEventListener('click', startNewWorkout);
+
+    </script>
+</body>
+</html>
